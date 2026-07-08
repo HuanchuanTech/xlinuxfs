@@ -2,6 +2,8 @@
 
 > 📖 Also available in [Simplified Chinese](README_CN.md).
 
+<a href="https://apps.apple.com/app/xlinuxfs/id6785355678"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download xlinuxfs on the App Store" height="44"></a>
+
 A macOS app + **FSKit file-system extension** that reads and writes **ext2/3/4, XFS, and Btrfs**
 volumes using the **real Linux kernel** via [LKL](https://github.com/lkl/linux) (Linux Kernel
 Library). No kernel extension, no macFUSE.
