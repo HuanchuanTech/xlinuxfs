@@ -2,7 +2,7 @@
 
 > 📖 English version: [English](README.md)
 
-<a href="https://apps.apple.com/app/xlinuxfs/id6785355678"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83" alt="在 App Store 下载 xlinuxfs" height="44"></a>
+<a href="https://apps.apple.com/cn/app/xlinuxfs/id6785355678"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83" alt="在 App Store 下载 xlinuxfs" height="44"></a>
 
 一个 macOS 应用 + **FSKit 文件系统扩展**,使用 **真正的 Linux 内核**(通过
 [LKL](https://github.com/lkl/linux),Linux Kernel Library)读写 **ext2/3/4、XFS、Btrfs** 卷。
