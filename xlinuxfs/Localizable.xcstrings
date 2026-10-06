@@ -42,6 +42,16 @@
         }
       }
     },
+    "About xlinuxfs" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关于 xlinuxfs"
+          }
+        }
+      }
+    },
     "Access" : {
       "localizations" : {
         "zh-Hans" : {
@@ -415,6 +425,26 @@
         }
       }
     },
+    "GitHub" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 项目主页"
+          }
+        }
+      }
+    },
+    "GitHub Issues" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 问题反馈"
+          }
+        }
+      }
+    },
     "Image" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -432,16 +462,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "映像文件"
-          }
-        }
-      }
-    },
-    "In Settings, scroll to Extensions → open “File System Extensions” → turn on “lklfuse”." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在系统设置中向下滚动到「扩展」→ 打开「文件系统扩展」→ 启用「lklfuse」。"
           }
         }
       }
@@ -840,12 +860,32 @@
         }
       }
     },
+    "Open File System Extension and turn on lklfuse." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开「文件系统扩展」，然后开启 lklfuse。"
+          }
+        }
+      }
+    },
     "Open Settings…" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开系统设置…"
+          }
+        }
+      }
+    },
+    "Open System Settings > General > Login Items & Extensions, then scroll down to Extensions." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开「系统设置」>「通用」>「登录项与扩展」，然后向下滚动到「扩展」。"
           }
         }
       }
@@ -898,6 +938,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新检测"
+          }
+        }
+      }
+    },
+    "Read and write ext2/3/4, XFS, and Btrfs drives on your Mac with Apple FSKit and LKL. No macFUSE or kernel extension required." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过 Apple FSKit 和 LKL，在 Mac 上读写 ext2/3/4、XFS 和 Btrfs 磁盘，无需 macFUSE 或内核扩展。"
           }
         }
       }
@@ -989,6 +1039,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在终端运行——沙盒应用无法替你执行:"
+          }
+        }
+      }
+    },
+    "Select **By Category**, not By App. Open File System Extensions and turn on lklfuse." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择「**按类别**」，而不是「按 App」。打开「文件系统扩展」，然后开启 lklfuse。"
           }
         }
       }
@@ -1140,16 +1200,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "该卷为只读(例如以只读方式 attach 的镜像),只能以只读方式挂载。"
-          }
-        }
-      }
-    },
-    "Turn on “lklfuse” in the File System Extensions list." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在「文件系统扩展」列表中启用「lklfuse」。"
           }
         }
       }

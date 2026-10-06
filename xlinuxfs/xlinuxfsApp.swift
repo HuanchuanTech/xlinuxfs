@@ -17,6 +17,17 @@ struct xlinuxfsApp: App {
                 .frame(minWidth: 720, minHeight: 460)
         }
         .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About xlinuxfs") {
+                    AboutPanel.show()
+                }
+            }
+            CommandGroup(replacing: .help) {
+                Link("GitHub", destination: URL(string: "https://github.com/HuanchuanTech/xlinuxfs")!)
+                Link("GitHub Issues", destination: URL(string: "https://github.com/HuanchuanTech/xlinuxfs/issues")!)
+            }
+        }
 
         Settings {
             SettingsView()
