@@ -22,6 +22,18 @@ restart, including their actual read-only flag. Device mounts use public Disk
 Arbitration and check the I/O Registry connection identity, actual driver, and
 actual access mode before reporting success.
 
+Physical-disk mounts can still be denied by App Sandbox on macOS 27
+(`kDAReturnNotPrivileged`). The app then offers `hdiutil mountvol`, while image
+permission errors and other failures remain errors. Unlike xntfs, this app does
+not offer `diskutil mount`: on the test host it still rejected an ext4 partition
+that `hdiutil mountvol` could mount through xlinuxfs.
+
+`mountvol` cannot pass explicit RO/RW options. The sheet shows the scenario
+setting used by a Terminal mount and withholds the command if it differs from
+the selected mode. Changing the selection or Settings re-evaluates this check;
+read-only media stays read-only. The extension reads the scenario preference
+again at activation so a setting changed after resource loading is not stale.
+
 The host app needs `com.apple.developer.fskit.mount`, user-selected read/write
 access, and app-scoped bookmarks. The extension retains
 `com.apple.developer.fskit.fsmodule`. Signing profiles must authorize the
@@ -93,6 +105,7 @@ change.
 
 ```bash
 bash tests/run_bridge_platforms.sh /path/to/test-images
+bash tests/run_system_mount.sh /path/to/test-images
 bash tests/run_automount.sh /path/to/test-images
 bash tests/run_macos27_images.sh /Applications/xlinuxfs.app \
   'Apple Development: your identity' /path/to/ext4-rawfs.img
@@ -104,6 +117,10 @@ xcrun swiftc -parse-as-library -target x86_64-apple-macos15.4 \
   tests/test_platform_compat.swift xlinuxfs/Services/*.swift \
   xlinuxfs/Model/LinuxDevice.swift -o _tmp/test-platform-compat-x86_64
 _tmp/test-platform-compat-x86_64 _tmp /path/to/ext4-rawfs.img
+xcrun swiftc -parse-as-library -target x86_64-apple-macos15.4 \
+  tests/test_mount_fallback.swift xlinuxfs/Services/*.swift \
+  xlinuxfs/Model/LinuxDevice.swift -o _tmp/test-mount-fallback-x86_64
+_tmp/test-mount-fallback-x86_64
 ```
 
 The bridge runner expects `ext4-rawfs.img`, `xfs-rawfs.img`, and `btrfs-rawfs.img`
@@ -111,3 +128,9 @@ under the fixture directory. Integration runners use disposable copies; source
 images must not already be mounted because copies preserve filesystem UUIDs.
 Logs remain under `_tmp`. The app UI retains the user's extension enablement and
 scenario preferences; the tests do not change them.
+
+The system-mount test uses disposable, read-only MBR images and verifies the
+actual driver, access mode, directory access, and unchanged image hashes for
+ext4, XFS, and Btrfs. The unit test covers physical-disk permission error mapping,
+non-permission errors, repeated access-mode changes, and read-only media. These
+tests do not reproduce the permission denial on a physical USB disk.

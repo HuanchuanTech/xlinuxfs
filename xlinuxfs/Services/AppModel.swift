@@ -78,7 +78,7 @@ final class AppModel {
     }
 
     /// Mount a device/image volume. Returns the outcome so the mount sheet can show a
-    /// copyable command when the sandbox can't mount in-app (macOS < 27).
+    /// copyable command on older systems or when a physical-disk mount is denied.
     @discardableResult
     func mount(_ device: LinuxDevice, readOnly: Bool) async -> MountOutcome {
         guard let mounter else { let m = "DiskArbitration unavailable"; setError(m); return .failed(m) }

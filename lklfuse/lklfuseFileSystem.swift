@@ -69,8 +69,8 @@ final class lklfuseFileSystem: FSUnaryFileSystem, FSUnaryFileSystemOperations,
             let vol = try lklfuseVolume(backend: made,
                                         activationBackend: { activationOptions, currentReadOnly in
                                             let explicitOptions = options.taskOptions + activationOptions
-                                            let readOnly = Self.requestsReadOnly(explicitOptions) ? true
-                                                : Self.requestsReadWrite(explicitOptions) ? false : decision.readOnly
+                                            // Settings may change while a loaded volume awaits a Terminal mount.
+                                            let readOnly = Self.readOnlyDecision(explicitOptions, resource: resource).readOnly
                                             guard readOnly != currentReadOnly else { return nil }
                                             var error: Int32 = 0
                                             guard let backend = Self.makeBackend(resource, allowWrite: !readOnly, out: &error) else {

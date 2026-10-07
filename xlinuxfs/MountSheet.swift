@@ -2,10 +2,9 @@
 //  MountSheet.swift
 //  Manual (re)mount of a detected device/image volume. Mounting only ever targets /Volumes
 //  (a sandboxed app/extension can't be granted an arbitrary folder; /Volumes is owned by
-//  diskarbitrationd). On macOS 27 the app mounts devices via Disk Arbitration; otherwise a
-//  copyable `hdiutil mountvol` command is shown. `mountvol` has no read-only option, so the
-//  read/write mode follows the media + the per-scenario Setting and is shown here (not an
-//  editable toggle); the extension applies it when the volume mounts.
+//  diskarbitrationd). On macOS 27 the app tries Disk Arbitration; older systems and denied
+//  physical-disk mounts use a copyable `hdiutil mountvol` command. That command follows
+//  the per-scenario Setting, so it is offered only when the requested access mode matches.
 //
 
 import SwiftUI
@@ -20,9 +19,7 @@ struct MountSheet: View {
     @State private var requestedReadOnly = true
     @State private var errorText: String?
 
-    /// The read/write mode the mount will get: forced read-only when the media isn't writable,
-    /// otherwise the per-scenario read-only Setting. `hdiutil mountvol` can't override this and
-    /// the extension applies it on the DA mount, so it's shown as info, not an editable toggle.
+    /// Explicit mode for in-app mounts, or the scenario setting on older systems.
     private var readOnly: Bool {
         if #available(macOS 27.0, *) { return requestedReadOnly || !device.mediaWritable }
         return defaultReadOnly
@@ -31,6 +28,11 @@ struct MountSheet: View {
     private var defaultReadOnly: Bool {
         !device.mediaWritable ? true
             : (device.kind == .diskImage ? model.settings.imageReadOnly : model.settings.deviceReadOnly)
+    }
+
+    private var copyableCommand: String? {
+        guard command != nil else { return nil }
+        return MountService.fallbackCommand(for: device, readOnly: readOnly, settingsReadOnly: defaultReadOnly)
     }
 
     private var accessNote: LocalizedStringKey {
@@ -56,11 +58,24 @@ struct MountSheet: View {
                 Text(errorText).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
 
-            if let command {
+            if command != nil {
                 Divider()
                 Text("A sandboxed app can't mount this here, so paste this into Terminal:")
                     .font(.callout)
-                CopyableCommand(command: command)
+                if #available(macOS 27.0, *) {
+                    Text("Terminal mounting follows the read-only setting for this kind of volume in Settings.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    LabeledContent("Terminal mount access") {
+                        Text(defaultReadOnly ? "Read-only" : "Read/write")
+                    }
+                }
+                if let copyableCommand {
+                    CopyableCommand(command: copyableCommand)
+                } else {
+                    Text("The selected access mode does not match Settings. Change the selection or Settings before copying the mount command.")
+                        .font(.callout)
+                    SettingsLink { Label("Settings…", systemImage: "gearshape") }
+                }
             }
 
             Spacer(minLength: 0)
@@ -84,6 +99,7 @@ struct MountSheet: View {
     private func doMount() async {
         guard !busy else { return }
         errorText = nil
+        command = nil
         busy = true
         defer { busy = false }
         switch await model.mount(device, readOnly: readOnly) {

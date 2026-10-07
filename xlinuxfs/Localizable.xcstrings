@@ -1073,6 +1073,16 @@
         }
       }
     },
+    "Settings…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置…"
+          }
+        }
+      }
+    },
     "Status unavailable on macOS 15. Check the lklfuse switch in System Settings; an unknown status does not mean it is disabled." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1114,6 +1124,26 @@
         }
       }
     },
+    "Terminal mount access" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端挂载权限"
+          }
+        }
+      }
+    },
+    "Terminal mounting follows the read-only setting for this kind of volume in Settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端挂载遵循应用设置中对此类卷的只读设置。"
+          }
+        }
+      }
+    },
     "The image is attached writable; whether it mounts read-only then follows your Disk Images setting." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1130,6 +1160,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "镜像将以只读方式挂载(推荐)。"
+          }
+        }
+      }
+    },
+    "The selected access mode does not match Settings. Change the selection or Settings before copying the mount command." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选读写模式与应用设置不一致。请先调整当前选项或应用设置，再复制挂载命令。"
           }
         }
       }

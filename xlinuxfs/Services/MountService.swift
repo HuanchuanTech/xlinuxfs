@@ -60,7 +60,7 @@ final class MountService {
 
     // MARK: mount
     //
-    // macOS 27 authorizes device mounts with the FSKit mount entitlement.
+    // Physical device mounts can still be denied by App Sandbox on macOS 27.
     // System auto-mounts remain independent of this manual entry point.
 
     func unifiedMount(_ device: LinuxDevice, readOnly: Bool) async -> MountOutcome {
@@ -74,8 +74,16 @@ final class MountService {
             return .mounted(try await mount(device, readOnly: readOnly))
         }
         catch {
-            return .failed(ImageMountService.diagnosticMessage(error))
+            return Self.mountFailure(error, for: device)
         }
+    }
+
+    static func mountFailure(_ error: Error, for device: LinuxDevice) -> MountOutcome {
+        if let mountError = error as? MountError, mountError.isNotPrivileged,
+           device.kind != .diskImage {
+            return .needsCommand(mountCommand(for: device))
+        }
+        return .failed(ImageMountService.diagnosticMessage(error))
     }
 
     private func checkedDisk(_ device: LinuxDevice) throws -> DADisk {
@@ -154,6 +162,14 @@ final class MountService {
     /// which the extension applies on the resulting DA mount (same as system auto-mount).
     static func mountCommand(for device: LinuxDevice) -> String {
         "hdiutil mountvol \(shellQuote(device.devicePath))"
+    }
+
+    /// mountvol cannot pass ro/rw. Do not offer a command that would ignore the
+    /// user's requested mode; changing either selection or Settings re-evaluates this.
+    static func fallbackCommand(for device: LinuxDevice, readOnly: Bool, settingsReadOnly: Bool) -> String? {
+        let mediaReadOnly = !device.mediaWritable
+        guard (readOnly || mediaReadOnly) == (settingsReadOnly || mediaReadOnly) else { return nil }
+        return mountCommand(for: device)
     }
 
     /// Attach a disk image as a device — the extension then auto-mounts any ext/XFS/Btrfs
