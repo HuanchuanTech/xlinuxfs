@@ -34,6 +34,9 @@ struct VolumeCapabilityTests {
         let writable = CommandLine.arguments[2] == "rw"
         let v = try volume(path, writable: writable)
         defer { _ = v.teardown() }
+        let pathConf: any FSVolume.PathConfOperations = v
+        try check(pathConf.maximumFileSize == UInt64(Int64.max), "signed 64-bit file-size limit")
+        try check(pathConf.maximumFileSizeInBits == 64, "explicit file-size bits through the FSKit protocol")
         let root = lklfuseItem(ino: 2, parentIno: 1, name: FSFileName(string: "/"))
         let name = FSFileName(string: "swift-capabilities")
         let key = FSFileName(string: "com.apple.test")

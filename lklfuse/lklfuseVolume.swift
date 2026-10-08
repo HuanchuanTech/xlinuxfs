@@ -457,6 +457,8 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
     var restrictsOwnershipChanges: Bool { false }
     var truncatesLongNames: Bool { false }
     var maximumFileSize: UInt64 { UInt64(Int64.max) }
+    // Avoid FSKit's automatic size conversion; the bridge uses signed 64-bit offsets.
+    var maximumFileSizeInBits: Int { 64 }
     var maximumXattrSize: Int { Int(LKFS_XATTR_MAX) }
 
     // MARK: Extended attributes
