@@ -12,10 +12,12 @@ Supports Apple Silicon and Intel, with a minimum deployment target of macOS 15.4
 macOS 27 adds in-app raw image mounting and device mounting with RO/RW selection.
 See [platform support and verification](docs/platform-support.md) for build
 prerequisites, OS-specific behavior, and tested boundaries.
+See [filesystem capabilities](docs/filesystem-capabilities.md) for metadata,
+item lifetime, allocation, and their implementation limits.
 
 > **Status: working.** The app (control panel, detection, diagnostics, guided command-line
 > attach / detach / mount) and the **FSKit extension** are both implemented: `probeResource`
-> identifies ext2/3/4, XFS and Btrfs from the superblock, and every volume operation (read/write,
+> identifies ext2/3/4, XFS and Btrfs from the superblock, and core volume operations (read/write,
 > create, remove, rename, symlinks, attributes) is served by the real Linux drivers. The bridge is
 > validated end-to-end by a CLI harness; OS-level mounting still needs the FSKit module authorized
 > by a provisioning profile (and macOS 27 for in-app mounting — see [Build & provisioning](#build--provisioning)).
@@ -33,7 +35,7 @@ xlinuxfs.app  (SwiftUI, App Sandbox — control panel)
  └─ Contents/Extensions/lklfuse.appex     FSKit module — in-process LKL Linux engine
         lklfuse.swift            @main UnaryFileSystemExtension
         lklfuseFileSystem.swift  probe (superblock magic) / load / unload
-        lklfuseVolume.swift      every FSVolume operation over the lkfs_* bridge
+        lklfuseVolume.swift      FSVolume handlers over the lkfs_* bridge
         lklfuseItem.swift        FSItem ↔ Linux inode number
         bridge/                  lkfs_* C bridge over the in-process LKL kernel (liblkl.a)
 ```
@@ -43,7 +45,7 @@ xlinuxfs.app  (SwiftUI, App Sandbox — control panel)
 - **App target `xlinuxfs/`** — control panel UI, `DiskArbitrationMonitor` (detects Linux media by
   the Linux-filesystem GPT GUID / content hints), `MountService` (guided command-line attach /
   detach / mount), `ExtensionStatus` diagnostics, settings, localization. Reused largely from xntfs.
-- **Extension target `lklfuse/`** — a full FSKit `FSUnaryFileSystem` / `FSVolume` / `FSItem`
+- **Extension target `lklfuse/`** — an FSKit `FSUnaryFileSystem` / `FSVolume` / `FSItem`
   implementation over the in-process LKL kernel (`bridge/lkl_fskit.*`, `lkl_blk_ops.c`,
   `linux_device_fskit.m`):
   - `lklfuseFileSystem.probeResource` identifies ext2/3/4 (`0xEF53`), XFS (`XFSB`) and Btrfs

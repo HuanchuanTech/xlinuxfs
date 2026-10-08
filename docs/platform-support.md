@@ -80,6 +80,12 @@ Build work and logs live under `_tmp/lkl-build/`; objects are removed on success
 
 ## Verification
 
+For item lifetime, native xattrs, timestamps, file flags, volume names,
+preallocation, and sparse-region queries, see the
+[filesystem capability design and limits](filesystem-capabilities.md).
+The new capability runners test the bridge and Swift handlers directly; they
+do not replace the signed system-mount integration tests below.
+
 Test host: macOS 27.0 (26A428), Xcode 27.0 (27A266a), Apple Silicon.
 
 - Signed universal Release build and strict app/extension signature validation.
@@ -105,6 +111,8 @@ change.
 
 ```bash
 bash tests/run_bridge_platforms.sh /path/to/test-images
+bash tests/run_bridge_capabilities.sh /path/to/test-images
+bash tests/run_volume_capabilities.sh /path/to/test-images
 bash tests/run_system_mount.sh /path/to/test-images
 bash tests/run_automount.sh /path/to/test-images
 bash tests/run_macos27_images.sh /Applications/xlinuxfs.app \

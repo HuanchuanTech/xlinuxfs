@@ -23,7 +23,9 @@ struct LinuxBackend {
 
 @available(macOS 15.4, *)
 final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOperations,
-                           FSVolume.ReadWriteOperations, FSVolume.OpenCloseOperations {
+                           FSVolume.ReadWriteOperations, FSVolume.OpenCloseOperations,
+                           FSVolume.XattrOperations, FSVolume.RenameOperations,
+                           FSVolume.PreallocateOperations {
 
     private var handle: OpaquePointer?            // lkfs_volume*
     private var backend: LinuxBackend?
@@ -124,11 +126,16 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
         attrs.parentID = FSItem.Identifier(rawValue: parent) ?? .invalid
         attrs.uid = 0
         attrs.gid = 0
-        attrs.flags = 0
+        attrs.flags = a.flags
         attrs.modifyTime = timespec(tv_sec: Int(a.mtime_sec), tv_nsec: Int(a.mtime_nsec))
         attrs.accessTime = timespec(tv_sec: Int(a.atime_sec), tv_nsec: Int(a.atime_nsec))
         attrs.changeTime = timespec(tv_sec: Int(a.ctime_sec), tv_nsec: Int(a.ctime_nsec))
-        attrs.birthTime  = timespec(tv_sec: Int(a.btime_sec), tv_nsec: Int(a.btime_nsec))
+        if a.has_btime != 0 {
+            attrs.birthTime = timespec(tv_sec: Int(a.btime_sec), tv_nsec: Int(a.btime_nsec))
+        }
+        if a.has_backup_time != 0 {
+            attrs.backupTime = timespec(tv_sec: Int(a.backup_sec), tv_nsec: Int(a.backup_nsec))
+        }
         return attrs
     }
 
@@ -141,7 +148,7 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
         caps.supports64BitObjectIDs = true
         caps.supports2TBFiles = true
         caps.supportsSparseFiles = true
-        caps.supportsHiddenFiles = false
+        caps.supportsHiddenFiles = true
         caps.caseFormat = .sensitive            // Linux filesystems are case-sensitive
         return caps
     }
@@ -258,36 +265,52 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
         try withLock {
             if readOnly { throw posixError(EROFS) }
             guard let it = item as? lklfuseItem, let h = handle else { throw posixError(EINVAL) }
-            var consumed: FSItem.Attribute = []
-            if newAttributes.isValid(.size) {
-                let rc = lkfs_truncate(h, it.ino, newAttributes.size)
-                if rc != 0 { throw posixError(-rc) }
-                consumed.insert(.size)
-            }
-            if newAttributes.isValid(.mode) {
-                let rc = lkfs_chmod(h, it.ino, newAttributes.mode)
-                if rc != 0 { throw posixError(-rc) }
-                consumed.insert(.mode)
-            }
-            let wantM = newAttributes.isValid(.modifyTime)
-            let wantA = newAttributes.isValid(.accessTime)
-            if wantM || wantA {
-                let m = newAttributes.modifyTime
-                let a = newAttributes.accessTime
-                let rc = lkfs_set_times(h, it.ino,
-                                        wantM ? Int64(m.tv_sec) : Int64.min, Int64(m.tv_nsec),
-                                        wantA ? Int64(a.tv_sec) : Int64.min, Int64(a.tv_nsec))
-                if rc != 0 { throw posixError(-rc) }
-                if wantM { consumed.insert(.modifyTime) }
-                if wantA { consumed.insert(.accessTime) }
-            }
-            // Report which attributes we actually applied: FSKit calls wasAttributeConsumed()
-            // on the request and treats anything not in consumedAttributes as not-honored.
-            newAttributes.consumedAttributes = consumed
+            try applyAttributes(newAttributes, ino: it.ino, handle: h)
             var a = lkfs_attr_t()
             let rc = lkfs_getattr(h, it.ino, &a)
             if rc != 0 { throw posixError(-rc) }
             return makeAttributes(a, parentIno: it.parentIno)
+        }
+    }
+
+    // Caller holds the volume lock. Ownership remains deliberately unconsumed.
+    private func applyAttributes(_ newAttributes: FSItem.SetAttributesRequest, ino: UInt64, handle h: OpaquePointer) throws {
+        var consumed: FSItem.Attribute = []
+        defer { newAttributes.consumedAttributes = consumed }
+        if newAttributes.isValid(.size) {
+            let rc = lkfs_truncate(h, ino, newAttributes.size)
+            if rc != 0 { throw posixError(-rc) }
+            consumed.insert(.size)
+        }
+        if newAttributes.isValid(.mode) {
+            let rc = lkfs_chmod(h, ino, newAttributes.mode)
+            if rc != 0 { throw posixError(-rc) }
+            consumed.insert(.mode)
+        }
+        let wantM = newAttributes.isValid(.modifyTime)
+        let wantA = newAttributes.isValid(.accessTime)
+        if wantM || wantA {
+            let m = newAttributes.modifyTime
+            let a = newAttributes.accessTime
+            let rc = lkfs_set_times(h, ino,
+                                    wantM ? Int64(m.tv_sec) : Int64.min, Int64(m.tv_nsec),
+                                    wantA ? Int64(a.tv_sec) : Int64.min, Int64(a.tv_nsec))
+            if rc != 0 { throw posixError(-rc) }
+            if wantM { consumed.insert(.modifyTime) }
+            if wantA { consumed.insert(.accessTime) }
+        }
+        for (attribute, time, birth) in [
+            (FSItem.Attribute.birthTime, newAttributes.birthTime, true),
+            (FSItem.Attribute.backupTime, newAttributes.backupTime, false)
+        ] where newAttributes.isValid(attribute) {
+            let rc = lkfs_set_extra_time(h, ino, birth, Int64(time.tv_sec), Int64(time.tv_nsec))
+            if rc != 0 { throw posixError(-rc) }
+            consumed.insert(attribute)
+        }
+        if newAttributes.isValid(.flags) {
+            let rc = lkfs_set_flags(h, ino, newAttributes.flags)
+            if rc != 0 { throw posixError(-rc) }
+            consumed.insert(.flags)
         }
     }
 
@@ -306,7 +329,10 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
     func reclaimItem(_ item: FSItem) async throws {
         withLock {
             guard let it = item as? lklfuseItem else { return }
-            if it.ino != lklfuseItem.rootIno { items.removeValue(forKey: it.ino) }
+            if it.ino != lklfuseItem.rootIno {
+                if let h = handle { lkfs_reclaim_item(h, it.ino) }
+                items.removeValue(forKey: it.ino)
+            }
         }
     }
 
@@ -326,21 +352,17 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
         try withLock {
             if readOnly { throw posixError(EROFS) }
             guard let dir = directory as? lklfuseItem, let h = handle, let nameStr = name.string else { throw posixError(EINVAL) }
+            guard type == .directory || type == .file else { throw posixError(ENOTSUP) }
             let kind = UInt32(type == .directory ? LKFS_TYPE_DIR : LKFS_TYPE_FILE)
             var err: Int32 = 0
             let ino = nameStr.withCString { lkfs_create(h, dir.ino, $0, kind, &err) }
             if ino == 0 { throw posixError(err) }
-            // Honor the caller's requested permissions (e.g. cp -p, an explicit mkdir mode);
-            // the bridge otherwise creates with a default 0644/0755. Ownership is ignored on
-            // this volume (FSVolumeAlwaysIgnoreOwnership), so uid/gid aren't applied. If the
-            // mode can't be set, roll the new (still-empty) item back so createItem stays
-            // all-or-nothing rather than reporting success with the wrong permissions.
-            if newAttributes.isValid(.mode) {
-                let rc = lkfs_chmod(h, ino, newAttributes.mode)
-                if rc != 0 {
-                    _ = nameStr.withCString { lkfs_remove(h, dir.ino, $0) }
-                    throw posixError(-rc)
-                }
+            do {
+                try applyAttributes(newAttributes, ino: ino, handle: h)
+            } catch {
+                _ = nameStr.withCString { lkfs_remove(h, dir.ino, $0) }
+                lkfs_reclaim_item(h, ino)
+                throw error
             }
             let fsName = FSFileName(string: nameStr)
             return (item(for: ino, parentIno: dir.ino, name: fsName), fsName)
@@ -434,8 +456,86 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
     var maximumNameLength: Int { 255 }
     var restrictsOwnershipChanges: Bool { false }
     var truncatesLongNames: Bool { false }
-    var maximumFileSize: UInt64 { UInt64.max }
-    var maximumXattrSize: Int { 0 }
+    var maximumFileSize: UInt64 { UInt64(Int64.max) }
+    var maximumXattrSize: Int { Int(LKFS_XATTR_MAX) }
+
+    // MARK: Extended attributes
+    private func withXattrName<T>(_ name: FSFileName, _ body: (UnsafePointer<CChar>) throws -> T) throws -> T {
+        guard !name.data.isEmpty, !name.data.contains(0) else { throw posixError(EINVAL) }
+        let bytes = name.data.map { CChar(bitPattern: $0) } + [0]
+        return try bytes.withUnsafeBufferPointer { try body($0.baseAddress!) }
+    }
+
+    func xattr(named name: FSFileName, of item: FSItem) async throws -> Data {
+        try withLock {
+            guard let it = item as? lklfuseItem, let h = handle else { throw posixError(EINVAL) }
+            return try withXattrName(name) { pointer in
+                var data = Data(count: Int(LKFS_XATTR_MAX))
+                let count = data.withUnsafeMutableBytes { lkfs_get_xattr(h, it.ino, pointer, $0.baseAddress, $0.count) }
+                if count < 0 { throw posixError(Int32(-count)) }
+                data.count = Int(count)
+                return data
+            }
+        }
+    }
+
+    func setXattr(named name: FSFileName, to value: Data?, on item: FSItem, policy: FSVolume.SetXattrPolicy) async throws {
+        try withLock {
+            if readOnly { throw posixError(EROFS) }
+            guard let it = item as? lklfuseItem, let h = handle else { throw posixError(EINVAL) }
+            guard policy == .delete || value != nil else { throw posixError(EINVAL) }
+            let data = value ?? Data()
+            guard data.count <= Int(LKFS_XATTR_MAX) else { throw posixError(E2BIG) }
+            let flag: UInt32
+            switch policy {
+            case .alwaysSet: flag = UInt32(LKFS_XATTR_SET)
+            case .mustCreate: flag = UInt32(LKFS_XATTR_CREATE)
+            case .mustReplace: flag = UInt32(LKFS_XATTR_REPLACE)
+            case .delete: flag = UInt32(LKFS_XATTR_DELETE)
+            @unknown default: throw posixError(EINVAL)
+            }
+            let rc = try withXattrName(name) { pointer in
+                data.withUnsafeBytes { lkfs_set_xattr(h, it.ino, pointer, $0.baseAddress, $0.count, flag) }
+            }
+            if rc != 0 { throw posixError(-rc) }
+        }
+    }
+
+    func xattrs(of item: FSItem) async throws -> [FSFileName] {
+        try withLock {
+            guard let it = item as? lklfuseItem, let h = handle else { throw posixError(EINVAL) }
+            var data = Data(count: Int(LKFS_XATTR_MAX))
+            let count = data.withUnsafeMutableBytes {
+                lkfs_list_xattrs(h, it.ino, $0.baseAddress?.assumingMemoryBound(to: CChar.self), $0.count)
+            }
+            if count < 0 { throw posixError(Int32(-count)) }
+            return data.prefix(Int(count)).split(separator: 0).map { FSFileName(data: Data($0)) }
+        }
+    }
+
+    // MARK: Volume label and allocation
+    func setVolumeName(_ name: FSFileName) async throws -> FSFileName {
+        try withLock {
+            if readOnly { throw posixError(EROFS) }
+            guard let h = handle, let value = name.string, !value.utf8.contains(0) else { throw posixError(EINVAL) }
+            let rc = value.withCString { lkfs_set_volume_name(h, $0) }
+            if rc != 0 { throw posixError(-rc) }
+            self.name = name
+            rootItem.name = name
+            return name
+        }
+    }
+
+    func preallocateSpace(for item: FSItem, at offset: off_t, length: Int, flags: FSVolume.PreallocateFlags) async throws -> Int {
+        try withLock {
+            if readOnly { throw posixError(EROFS) }
+            guard let it = item as? lklfuseItem, let h = handle else { throw posixError(EINVAL) }
+            guard let rawFlags = UInt32(exactly: flags.rawValue) else { throw posixError(EINVAL) }
+            let result = lkfs_preallocate(h, it.ino, Int64(offset), Int64(length), rawFlags)
+            if result < 0 { throw posixError(Int32(-result)) }
+            return Int(result)
+        }
+    }
 
     // MARK: ReadWrite
     func read(from item: FSItem, at offset: off_t, length: Int, into buffer: FSMutableFileDataBuffer) async throws -> Int {
@@ -464,9 +564,42 @@ final class lklfuseVolume: FSVolume, FSVolume.Operations, FSVolume.PathConfOpera
         }
     }
 
-    // MARK: OpenClose (no-ops)
-    func openItem(_ item: FSItem, modes: FSVolume.OpenModes) async throws {}
-    func closeItem(_ item: FSItem, modes: FSVolume.OpenModes) async throws {}
+    // MARK: OpenClose
+    func openItem(_ item: FSItem, modes: FSVolume.OpenModes) async throws {
+        try withLock {
+            guard let it = item as? lklfuseItem, let h = handle,
+                  let raw = UInt32(exactly: modes.rawValue) else { throw posixError(EINVAL) }
+            let rc = lkfs_open_item(h, it.ino, raw)
+            if rc != 0 { throw posixError(-rc) }
+        }
+    }
+
+    func closeItem(_ item: FSItem, modes: FSVolume.OpenModes) async throws {
+        try withLock {
+            guard let it = item as? lklfuseItem, let h = handle,
+                  let raw = UInt32(exactly: modes.rawValue) else { throw posixError(EINVAL) }
+            let rc = lkfs_close_item(h, it.ino, raw)
+            if rc != 0 { throw posixError(-rc) }
+        }
+    }
+}
+
+@available(macOS 27.0, *)
+extension lklfuseVolume: FSVolume.SeekRegionHandler {
+    func seek(within item: FSItem, from offset: off_t, region: FSVolume.SeekRegion, context: FSContext) async throws -> FSSeekRegionResult {
+        try withLock {
+            guard let it = item as? lklfuseItem, let h = handle else { throw posixError(EINVAL) }
+            let hole: Bool
+            switch region {
+            case .hole: hole = true
+            case .data: hole = false
+            @unknown default: throw posixError(EINVAL)
+            }
+            let result = lkfs_seek_region(h, it.ino, Int64(offset), hole)
+            if result < 0 { throw posixError(Int32(-result)) }
+            return FSSeekRegionResult(returnedOffset: off_t(result))
+        }
+    }
 }
 
 // MARK: - Directory enumeration trampoline

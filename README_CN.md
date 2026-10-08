@@ -12,9 +12,10 @@ NTFS 引擎(ntfs-3g)。
 原始卷镜像挂载，以及可选择只读/读写模式的设备挂载。macOS 15 保留 Linux 卷的
 系统自动挂载流程，不加入 NTFS 专用的重新挂载兼容脚本。
 构建前提与实测范围见 [平台支持说明](docs/platform-support.md)。
+元数据、文件生命周期、预分配等能力的设计与边界见 [文件系统能力说明](docs/filesystem-capabilities.md)。
 
 > **状态:可用。** 应用部分(控制面板、检测、诊断、引导式命令行 附加/分离/挂载)与 **FSKit 扩展**
-> 均已实现:`probeResource` 从超级块识别 ext2/3/4、XFS、Btrfs,所有卷操作(读写、创建、删除、重命名、
+> 均已实现:`probeResource` 从超级块识别 ext2/3/4、XFS、Btrfs,核心卷操作(读写、创建、删除、重命名、
 > 符号链接、属性)都由真 Linux 驱动处理。桥接层经命令行测试程序端到端验证;系统级挂载仍需描述文件
 > 授权 FSKit 模块(应用内挂载还需 macOS 27 —— 见 [构建与签名](#构建与签名))。
 >
@@ -30,7 +31,7 @@ xlinuxfs.app  (SwiftUI,App 沙盒 —— 控制面板)
  └─ Contents/Extensions/lklfuse.appex     FSKit 模块 —— 进程内 LKL Linux 引擎
         lklfuse.swift            @main UnaryFileSystemExtension
         lklfuseFileSystem.swift  probe(超级块 magic)/ load / unload
-        lklfuseVolume.swift      每个 FSVolume 操作,经 lkfs_* 桥接
+        lklfuseVolume.swift      FSVolume 操作,经 lkfs_* 桥接
         lklfuseItem.swift        FSItem ↔ Linux inode 号
         bridge/                  基于进程内 LKL 内核(liblkl.a)的 lkfs_* C 桥接
 ```
@@ -40,7 +41,7 @@ xlinuxfs.app  (SwiftUI,App 沙盒 —— 控制面板)
 - **应用 target `xlinuxfs/`** —— 控制面板 UI、`DiskArbitrationMonitor`(按 Linux 文件系统 GPT GUID /
   内容提示检测 Linux 卷)、`MountService`(引导式命令行 附加/分离/挂载)、`ExtensionStatus` 诊断、
   设置、本地化。基本沿用 xntfs。
-- **扩展 target `lklfuse/`** —— 基于进程内 LKL 内核的完整 FSKit `FSUnaryFileSystem` / `FSVolume` /
+- **扩展 target `lklfuse/`** —— 基于进程内 LKL 内核的 FSKit `FSUnaryFileSystem` / `FSVolume` /
   `FSItem` 实现(`bridge/lkl_fskit.*`、`lkl_blk_ops.c`、`linux_device_fskit.m`):
   - `probeResource` 从超级块 magic 识别 ext2/3/4(`0xEF53`)、XFS(`XFSB`)、Btrfs(`_BHRfS_M`),
     并报告卷标 + 原生文件系统 UUID。
