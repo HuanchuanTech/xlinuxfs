@@ -284,6 +284,16 @@
         }
       }
     },
+    "Don't show this tip again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不再显示此提示"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "zh-Hans" : {
@@ -370,16 +380,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "扩展已安装"
-          }
-        }
-      }
-    },
-    "Extension status unavailable on macOS 15" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 15 无法报告扩展状态"
           }
         }
       }
@@ -835,6 +835,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "好"
+          }
+        }
+      }
+    },
+    "On macOS 15, xlinuxfs cannot check whether lklfuse is enabled. If it is already on, you can dismiss this tip." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 15 上，xlinuxfs 无法检测 lklfuse 的开关状态。如果已经开启，可以关闭此提示。"
           }
         }
       }

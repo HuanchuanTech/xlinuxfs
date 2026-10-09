@@ -23,10 +23,29 @@ struct PlatformCompatibilityTests {
         try writePlist(identifier: ExtensionStatus.bundleID, executable: "lklfuse")
         precondition(ExtensionStatus.embeddedExtension(in: app) != nil)
         let status = ExtensionStatus()
+        precondition(status.state == .unknown && status.isEnabled == nil && !status.isInstalled)
+        precondition(status.registrationOK == nil)
+        let states: [ExtensionStatus.State] = [.unknown, .bundled, .notInstalled, .disabled, .enabled]
+        for state in states {
+            for dismissed in [false, true] {
+                for mounted in [false, true] {
+                    let expected = state == .bundled && !dismissed && !mounted
+                    precondition(state.shouldShowLegacyGuidance(dismissed: dismissed, hasMountedVolume: mounted) == expected)
+                }
+            }
+        }
+        print("PASS legacy guidance: all 20 state/dismissed/mounted combinations")
         if ExtensionStatus.usesBundledExtensionStatus {
             await status.refresh(appURL: app)
             precondition(status.state == .bundled && status.isEnabled == nil && status.registrationOK == nil)
             precondition(status.installedCount == 0 && status.queryError == nil)
+            precondition(status.moduleURLs.isEmpty && !status.isInstalled)
+            precondition(status.state.shouldShowLegacyGuidance(dismissed: false, hasMountedVolume: false))
+            precondition(!status.state.shouldShowLegacyGuidance(dismissed: true, hasMountedVolume: false))
+            await status.refresh(appURL: app)
+            precondition(status.state == .bundled && status.isEnabled == nil && status.registrationOK == nil)
+            precondition(status.moduleURLs.isEmpty && !status.isInstalled)
+            precondition(!status.state.shouldShowLegacyGuidance(dismissed: true, hasMountedVolume: false))
             print("PASS macOS 15: bundled presence is separate from unknown enablement/registration")
         } else {
             print("SKIP macOS 15 runtime branch on this OS")
@@ -35,6 +54,13 @@ struct PlatformCompatibilityTests {
         precondition(ExtensionStatus.embeddedExtension(in: app) == nil)
         try writePlist(identifier: "com.example.other", executable: "lklfuse")
         precondition(ExtensionStatus.embeddedExtension(in: app) == nil)
+        if ExtensionStatus.usesBundledExtensionStatus {
+            await status.refresh(appURL: app)
+            precondition(status.state == .notInstalled && status.bundledExtensionURL == nil)
+            precondition(status.isEnabled == nil && status.registrationOK == nil)
+            precondition(!status.state.shouldShowLegacyGuidance(dismissed: true, hasMountedVolume: false))
+            print("PASS macOS 15: missing extension remains not installed after guidance dismissal")
+        }
         print("PASS embedded extension identity and executable validation")
 
         let invalid = directory.appendingPathComponent("partitioned.img")

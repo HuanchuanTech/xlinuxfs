@@ -15,33 +15,33 @@ struct ContentView: View {
     @State private var showDiagnostics = false
     @State private var pendingAttach: PendingAttach?
     @State private var showError = false
+    @AppStorage("legacyExtensionGuidanceDismissed") private var legacyGuidanceDismissed = false
+
+    private var hasMountedModuleVolume: Bool {
+        model.devices.contains { $0.state.isMounted && $0.mountedByModule }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             if extStatus.state == .disabled || extStatus.state == .notInstalled {
                 ExtensionBanner(status: extStatus, onDiagnostics: { showDiagnostics = true })
-            } else if extStatus.state == .bundled {
-                HStack(spacing: 12) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Extension status unavailable on macOS 15")
-                                .font(.callout)
-                            ExtensionEnablementInstructions()
-                        }
-                    } icon: {
-                        Image(systemName: "info.circle")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Open Settings…") { ExtensionStatus.openSettings() }
-                    Button("Diagnostics…") { showDiagnostics = true }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .overlay(alignment: .bottom) { Divider() }
+            } else if extStatus.state.shouldShowLegacyGuidance(
+                dismissed: legacyGuidanceDismissed, hasMountedVolume: hasMountedModuleVolume
+            ) {
+                LegacyExtensionGuidance(
+                    onDiagnostics: { showDiagnostics = true },
+                    onDismiss: { legacyGuidanceDismissed = true }
+                )
             }
             mainContent
         }
         .task { await extStatus.refresh() }
+        .onChange(of: hasMountedModuleVolume, initial: true) { _, mounted in
+            // Remember completed guidance, not the current extension switch state.
+            if ExtensionStatus.usesBundledExtensionStatus && mounted {
+                legacyGuidanceDismissed = true
+            }
+        }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in
             model.refreshDevices()
         }
