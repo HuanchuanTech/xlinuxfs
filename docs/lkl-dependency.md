@@ -63,6 +63,31 @@ after clone. They are not port changes and are not used by this filesystem
 profile. Do not stage them. Use case-sensitive storage for general Linux
 development; this fixed Darwin build is tested on ordinary APFS.
 
+## Filesystem-only profile
+
+The Darwin profile now compiles 714 kernel units instead of 1047. Kconfig
+disables networking, FAT/VFAT and NLS, PCI/NVMe, input/HID/serio and TTY;
+the object list and both kernel/public headers are regenerated together.
+It retains ext2/3/4, XFS, Btrfs, their existing ACL/xattr and compression/checksum
+support, virtio block I/O, procfs and sysfs. Both architectures and `-O2` remain
+unchanged. Tracing is retained because the LKL architecture selects it.
+
+The exporter no longer requires historical `.o.macho` files to choose objects.
+Its explicit Darwin replacements and scheduler ordering are documented in
+`vendor/lkl/tools/lkl/darwin/README.md`. Run the profile checks before building:
+
+```sh
+python3 vendor/lkl/tools/lkl/darwin/test_profile.py
+bash scripts/build-liblkl.sh
+bash tests/run_bridge_platforms.sh /path/to/test-images
+bash tests/run_bridge_capabilities.sh /path/to/test-images
+bash tests/run_volume_capabilities.sh /path/to/test-images
+```
+
+The host send/recv convenience wrappers use the syscall dispatcher directly,
+so the host headers also compile without generated socket syscall helpers;
+the filesystem-only kernel returns `ENOSYS` for networking operations.
+
 ## Validation (2026-09-28)
 
 The submodule was cloned from committed Git objects, without the original
