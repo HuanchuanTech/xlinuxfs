@@ -1,97 +1,114 @@
-# xlinuxfs — Linux filesystems for macOS (FSKit)
+# xlinuxfs - Open-source Linux filesystem read/write for macOS
 
-> 📖 Also available in [Simplified Chinese](README_CN.md).
+> Read and write ext2/3/4, XFS, and Btrfs drives on your Mac with Apple FSKit and the real Linux kernel via LKL, without macFUSE or a kernel extension.
+
+> [Simplified Chinese](README_CN.md)
 
 <a href="https://apps.apple.com/app/xlinuxfs/id6785355678"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download xlinuxfs on the App Store" height="44"></a>
 
-A macOS app + **FSKit file-system extension** for mounting **ext2/3/4, XFS, and Btrfs**
-volumes — no kernel extension, no macFUSE. Extracted from the
-[xntfs](../xntfs) project's reusable FSKit scaffolding, with the NTFS engine (ntfs-3g) removed.
+![xlinuxfs mounting an ext4 volume and an XFS disk image on macOS](assets/xlinuxfs-screenshot.png)
 
-Supports Apple Silicon and Intel, with a minimum deployment target of macOS 15.4.
-macOS 27 adds in-app raw image mounting and device mounting with RO/RW selection.
-See [platform support and verification](docs/platform-support.md) for build
-prerequisites, OS-specific behavior, and tested boundaries.
-See [filesystem capabilities](docs/filesystem-capabilities.md) for metadata,
-item lifetime, allocation, and their implementation limits.
+## What is xlinuxfs?
 
-> **Status: working.** The app (control panel, detection, diagnostics, guided command-line
-> attach / detach / mount) and the **FSKit extension** are both implemented: `probeResource`
-> identifies ext2/3/4, XFS and Btrfs from the superblock, and core volume operations (read/write,
-> create, remove, rename, symlinks, attributes) is served by the real Linux drivers. The bridge is
-> validated end-to-end by a CLI harness; OS-level mounting still needs the FSKit module authorized
-> by a provisioning profile (and macOS 27 for in-app mounting — see [Build & provisioning](#build--provisioning)).
->
-> **Engine: the real Linux kernel via LKL** (Linux Kernel Library), built as a native Mach-O
-> `liblkl.a`, so ext2/3/4 + XFS + Btrfs are served by the actual in-kernel drivers (journaled,
-> read-write) rather than a reimplementation. The macOS port of LKL (kernel → Mach-O) is tracked in
-> `vendor/lkl/tools/lkl/darwin/README.md`; the host side (`lkl_host_ops` + a block backend over
-> `FSBlockDeviceResource`, then `lkl_sys_mount`/`lkl_sys_*`) lives in the extension's `bridge/`.
+xlinuxfs is a macOS utility and **FSKit file-system extension** for Linux-formatted
+external drives, SSDs, USB devices, partitions, and disk images. It brings
+**ext2, ext3, ext4, XFS, and Btrfs** volumes to Finder and other Mac
+applications under `/Volumes`, with read/write access when the media and mount
+mode allow it.
 
-```
-xlinuxfs.app  (SwiftUI, App Sandbox — control panel)
- ├─ AppModel ── DiskArbitrationMonitor   detect/list Linux-fs volumes (detection only)
- │           └─ MountService             guided command-line attach / detach / mount
- └─ Contents/Extensions/lklfuse.appex     FSKit module — in-process LKL Linux engine
-        lklfuse.swift            @main UnaryFileSystemExtension
-        lklfuseFileSystem.swift  probe (superblock magic) / load / unload
-        lklfuseVolume.swift      FSVolume handlers over the lkfs_* bridge
-        lklfuseItem.swift        FSItem ↔ Linux inode number
-        bridge/                  lkfs_* C bridge over the in-process LKL kernel (liblkl.a)
-```
+macOS does not provide built-in Finder mounting for these Linux filesystems.
+xlinuxfs supplies the missing filesystem layer while keeping the normal macOS
+volume workflow: connect a drive, mount it, open it in Finder, work with files,
+and eject it when finished.
 
-## What's here vs. what's TODO
+## Why use xlinuxfs?
 
-- **App target `xlinuxfs/`** — control panel UI, `DiskArbitrationMonitor` (detects Linux media by
-  the Linux-filesystem GPT GUID / content hints), `MountService` (guided command-line attach /
-  detach / mount), `ExtensionStatus` diagnostics, settings, localization. Reused largely from xntfs.
-- **Extension target `lklfuse/`** — an FSKit `FSUnaryFileSystem` / `FSVolume` / `FSItem`
-  implementation over the in-process LKL kernel (`bridge/lkl_fskit.*`, `lkl_blk_ops.c`,
-  `linux_device_fskit.m`):
-  - `lklfuseFileSystem.probeResource` identifies ext2/3/4 (`0xEF53`), XFS (`XFSB`) and Btrfs
-    (`_BHRfS_M`) from the superblock magic, and reports the label + native fs UUID.
-  - `lklfuseFileSystem.loadResource` loads metadata read-only; activation then applies
-    explicit RO/RW options or the per-scenario App-Group setting.
-  - `lklfuseVolume` operations are served by the Linux drivers via `lkl_sys_*`.
-- **`Info.plist` `FSMediaTypes`** — Linux-filesystem GPT GUID `0FC63DAF-…-3D69D8477DE4`, a `Linux`
-  content hint, and partitionless whole-disk. **Verify the exact DA content hints for ext volumes
-  on a real machine** (MBR disks may report `Linux`/`0x83` differently).
+- **One Linux filesystem app for Mac** - work with ext2/3/4, XFS, and Btrfs from one focused utility.
+- **Real Linux filesystem implementations** - the extension uses the Linux kernel drivers through LKL (Linux Kernel Library) instead of reimplementing each on-disk format.
+- **Modern macOS integration** - uses Apple's FSKit model and mounts volumes through macOS, without macFUSE or a kernel extension.
+- **Read/write or read-only control** - choose the access mode for supported devices and disk images; read-only media remains read-only.
+- **Physical drives and disk images** - handle Linux USB drives, external disks, SSDs, partitions, and supported raw images.
+- **Finder-compatible volumes** - mounted volumes appear under `/Volumes` and can be used by normal Mac applications.
+- **Clear status and diagnostics** - inspect the filesystem, mount path, access mode, extension state, and common setup issues.
+- **Apple Silicon and Intel** - universal builds support `arm64` and `x86_64`, with macOS 15.4 or later.
+- **Open source and local** - source, tests, compatibility notes, and privacy policy are available in this repository; normal operation does not upload your files.
 
-## Excluded from the source project
+## Who is it for?
 
-Everything ntfs-3g: the `ntfs-3g` submodule + `libntfs-3g.a`, the C/Obj-C bridge
-(`bridge/ntfs_fskit.{c,h}`, `ntfs_device_fskit.m`), the Swift↔C bridging header, the
-`build-libntfs.sh` script and `test_bridge.c`. The extension's build settings (`HAVE_CONFIG_H`,
-ntfs-3g header search paths, the static-lib link, the Obj-C bridging header) were stripped from
-the Xcode project.
+xlinuxfs is for Mac users who move Linux-formatted drives between Linux and
+macOS, inspect ext4/XFS/Btrfs media from a server, NAS, Raspberry Pi, or
+Steam Deck, access Linux partitions from a dual-boot machine, or open a Linux
+disk image without starting a full Linux desktop.
 
-## Build & provisioning
+If you are searching for an **ext4 driver for Mac**, **mount ext4 on macOS**,
+**read and write Linux drives on a Mac**, **XFS for Mac**, **Btrfs for Mac**, a
+**Linux filesystem driver for macOS**, an **open-source macOS disk utility**,
+or a **macFUSE alternative**, xlinuxfs is built for that use case.
 
-Initialize `vendor/lkl` with `git submodule update --init --recursive` and install
-upstream LLVM 19 (or set `CLANG` to its executable). Xcode's prebuild phase builds
-the universal library and matching headers automatically. See
-[dependency and fork workflow](docs/lkl-dependency.md).
+## Typical workflow
 
-Open `xlinuxfs.xcodeproj` and build the `xlinuxfs` scheme. Targets use Xcode **synchronized folder
-groups**, so files added under `xlinuxfs/` and `lklfuse/` are picked up automatically.
+1. Install xlinuxfs and enable its file-system extension in **System Settings > General > Login Items & Extensions > File System Extensions**.
+2. Connect a Linux-formatted drive or open the app to inspect a supported disk image.
+3. Let macOS mount supported devices automatically, or choose the available mount action and access mode in xlinuxfs.
+4. Open the mounted volume in Finder, use it with normal Mac applications, and eject it from the app or Finder when finished.
 
-The extension declares the restricted entitlement `com.apple.developer.fskit.fsmodule`
-(`lklfuse/lklfuse.entitlements`); macOS only loads it when that entitlement is authorized by a
-provisioning profile (App ID with the **FSKit File System Module** capability for your team).
-Enable the module under **System Settings → General → Login Items & Extensions → File System
-Extensions**.
+For disk images, macOS 27 supports the in-app raw-image workflow. Earlier
+supported systems show a copyable Terminal command for image attachment when
+the sandbox cannot perform that operation directly.
 
-## Caveats
+## macOS support
 
-- Builds via `xcodebuild` (app + embedded `lklfuse.appex`); open `xlinuxfs.xcodeproj` in Xcode to
-  confirm it loads there too. OS-level mounting can't be exercised in-app on macOS < 27 (FSKit
-  Mounter is macOS-27-only); the bridge is validated by the CLI harness meanwhile.
-- The app icon (`assets/xlinuxfs-icon.svg`, rasterized into `Assets.xcassets/AppIcon.appiconset`) is a Tux-on-a-drive design in the xntfs product family; re-render the sizes from the SVG with `rsvg-convert` if you edit it.
-- Bundle IDs: app `com.huanchuan.xlinuxfs`, extension `com.huanchuan.xlinuxfs.lklfuse`; `FSShortName` =
-  `xlinuxfs`. Change to your own identifiers as needed.
+| macOS | Mounting workflow |
+|---|---|
+| macOS 15.4+ | Enable the extension, use normal Disk Arbitration auto-mount for Linux devices, and use the displayed Terminal command for disk-image attachment. |
+| macOS 26 | Supported devices use the normal auto-mount workflow; disk images use the displayed Terminal attachment command. |
+| macOS 27+ | Adds in-app raw image mounting and explicit device mounting with read-only/read-write selection. |
 
-## License & privacy
+The exact workflow depends on the macOS version, extension state, device type,
+partition layout, and whether the underlying media is writable.
 
-This project embeds the Linux kernel and is distributed under the
-**GNU General Public License, version 2** (see [LICENSE](LICENSE)).
-See the [Privacy Policy](PRIVACY.md) for data handling information.
+## Supported filesystems and limits
+
+| Filesystem | Access |
+|---|---|
+| ext2, ext3, ext4 | Read/write when mounted writable; read-only mode is also supported |
+| XFS | Read/write when mounted writable; read-only mode is also supported |
+| Btrfs | Read/write when mounted writable; read-only mode is also supported |
+
+- The FSKit extension must be signed, installed, and enabled before macOS can use it.
+- A physical medium or disk image attached read-only remains read-only; the driver cannot make read-only media writable.
+- Direct in-app image mounting targets supported raw, single-volume images. Partitioned or compressed images use the Terminal attachment flow.
+- xlinuxfs is a filesystem access utility, not a general file manager, partition editor, formatter, filesystem repair suite, or data-recovery tool.
+- Check/repair is intentionally not presented as a destructive or recovery operation. Use the appropriate Linux filesystem tools and a backup for repair work.
+
+## xlinuxfs and commercial alternatives
+
+Users comparing Linux filesystem software for Mac may also come across
+commercial products such as [extFS for Mac by Paragon Software](https://www.paragon-software.com/home/extfs-mac/),
+which focuses on ext2/3/4 volumes, and [vmount](https://vmount.app/), which
+uses a Linux microVM to expose supported Linux drives on macOS. xlinuxfs takes
+a different approach: it is an open-source GPLv2 project built around Apple's
+FSKit and the Linux kernel through LKL. It is independent and is not affiliated
+with or endorsed by Apple, Linux, Paragon Software, vmount, or the Linux kernel
+maintainers.
+
+## Related projects
+
+- [xntfs](https://github.com/HuanchuanTech/xntfs) provides open-source FSKit-based read/write support for NTFS volumes on macOS.
+- [lkl](https://github.com/HuanchuanTech/lkl) contains the Linux Kernel Library source and Darwin build integration used by this project.
+
+## Documentation
+
+- [Architecture and code structure](docs/architecture.md)
+- [Build and development](docs/build.md)
+- [Platform support and verification](docs/platform-support.md)
+- [Filesystem capabilities and limits](docs/filesystem-capabilities.md)
+- [Privacy policy](PRIVACY.md)
+
+## Open source
+
+- [Source code and issues](https://github.com/HuanchuanTech/xlinuxfs)
+- [GPLv2 license](LICENSE)
+
+ext2, ext3, ext4, XFS, Btrfs, Linux, macOS, Apple, FSKit, LKL, macFUSE,
+Paragon, and vmount are names or trademarks of their respective owners.

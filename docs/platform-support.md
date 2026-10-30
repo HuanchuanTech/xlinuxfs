@@ -24,9 +24,9 @@ actual access mode before reporting success.
 
 Physical-disk mounts can still be denied by App Sandbox on macOS 27
 (`kDAReturnNotPrivileged`). The app then offers `hdiutil mountvol`, while image
-permission errors and other failures remain errors. Unlike xntfs, this app does
-not offer `diskutil mount`: on the test host it still rejected an ext4 partition
-that `hdiutil mountvol` could mount through xlinuxfs.
+permission errors and other failures remain errors. The app does not offer
+`diskutil mount`: on the test host it still rejected an ext4 partition that
+`hdiutil mountvol` could mount through xlinuxfs.
 
 `mountvol` cannot pass explicit RO/RW options. The sheet shows the scenario
 setting used by a Terminal mount and withholds the command if it differs from

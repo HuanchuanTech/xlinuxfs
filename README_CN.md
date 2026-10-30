@@ -1,87 +1,109 @@
-# xlinuxfs — macOS 上的 Linux 文件系统(FSKit)
+# xlinuxfs - macOS 上开源的 Linux 文件系统读写工具
 
-> 📖 English version: [English](README.md)
+> 在 Mac 上读写 ext2/3/4、XFS 和 Btrfs 磁盘。使用 Apple FSKit 和通过 LKL 运行的真实 Linux 内核，不需要 macFUSE，也不需要内核扩展。
+
+> [English](README.md)
 
 <a href="https://apps.apple.com/cn/app/xlinuxfs/id6785355678"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83" alt="在 App Store 下载 xlinuxfs" height="44"></a>
 
-一个 macOS 应用 + **FSKit 文件系统扩展**,用于挂载 **ext2/3/4、XFS、Btrfs** 卷——无需内核
-扩展,无需 macFUSE。它从 [xntfs](../xntfs) 项目里**可复用的 FSKit 脚手架**抽取而来,并移除了
-NTFS 引擎(ntfs-3g)。
+![xlinuxfs 在 macOS 上挂载 ext4 卷和 XFS 磁盘映像](assets/xlinuxfs-screenshot.png)
 
-支持 Apple Silicon 和 Intel，最低系统版本为 macOS 15.4。macOS 27 增加了应用内
-原始卷镜像挂载，以及可选择只读/读写模式的设备挂载。macOS 15 保留 Linux 卷的
-系统自动挂载流程，不加入 NTFS 专用的重新挂载兼容脚本。
-构建前提与实测范围见 [平台支持说明](docs/platform-support.md)。
-元数据、文件生命周期、预分配等能力的设计与边界见 [文件系统能力说明](docs/filesystem-capabilities.md)。
+## 什么是 xlinuxfs？
 
-> **状态:可用。** 应用部分(控制面板、检测、诊断、引导式命令行 附加/分离/挂载)与 **FSKit 扩展**
-> 均已实现:`probeResource` 从超级块识别 ext2/3/4、XFS、Btrfs,核心卷操作(读写、创建、删除、重命名、
-> 符号链接、属性)都由真 Linux 驱动处理。桥接层经命令行测试程序端到端验证;系统级挂载仍需描述文件
-> 授权 FSKit 模块(应用内挂载还需 macOS 27 —— 见 [构建与签名](#构建与签名))。
->
-> **引擎:用 LKL(Linux Kernel Library)跑真 Linux 内核**,编成原生 Mach-O 的 `liblkl.a`,
-> 让 ext2/3/4 + XFS + Btrfs 由**内核原生驱动**处理(带日志、可读写),而不是重新实现。LKL 的
-> macOS 移植与构建记录在 `vendor/lkl/tools/lkl/darwin/README.md`;宿主层(`lkl_host_ops` +
-> 基于 `FSBlockDeviceResource` 的块后端,再 `lkl_sys_mount`/`lkl_sys_*`)就在扩展的 `bridge/` 里。
+xlinuxfs 是一个 macOS 工具和 **FSKit 文件系统扩展**，用于访问 Linux
+格式的外置硬盘、SSD、U 盘、分区和磁盘映像。它支持
+**ext2、ext3、ext4、XFS 和 Btrfs**，让这些卷以 `/Volumes` 下的普通 macOS
+卷出现在 Finder 和其他 Mac 应用中；当介质和挂载模式允许时，支持读写。
 
-```
-xlinuxfs.app  (SwiftUI,App 沙盒 —— 控制面板)
- ├─ AppModel ── DiskArbitrationMonitor   检测/列出 Linux 卷(仅检测)
- │           └─ MountService             引导式命令行 附加/分离/挂载
- └─ Contents/Extensions/lklfuse.appex     FSKit 模块 —— 进程内 LKL Linux 引擎
-        lklfuse.swift            @main UnaryFileSystemExtension
-        lklfuseFileSystem.swift  probe(超级块 magic)/ load / unload
-        lklfuseVolume.swift      FSVolume 操作,经 lkfs_* 桥接
-        lklfuseItem.swift        FSItem ↔ Linux inode 号
-        bridge/                  基于进程内 LKL 内核(liblkl.a)的 lkfs_* C 桥接
-```
+macOS 本身不会在 Finder 中直接挂载这些 Linux 文件系统。xlinuxfs 补上这
+一层文件系统支持，同时保留熟悉的 macOS 使用方式：连接磁盘、挂载卷、在
+Finder 中操作文件，完成后推出磁盘。
 
-## 已有 vs. 待办(TODO)
+## 为什么选择 xlinuxfs？
 
-- **应用 target `xlinuxfs/`** —— 控制面板 UI、`DiskArbitrationMonitor`(按 Linux 文件系统 GPT GUID /
-  内容提示检测 Linux 卷)、`MountService`(引导式命令行 附加/分离/挂载)、`ExtensionStatus` 诊断、
-  设置、本地化。基本沿用 xntfs。
-- **扩展 target `lklfuse/`** —— 基于进程内 LKL 内核的 FSKit `FSUnaryFileSystem` / `FSVolume` /
-  `FSItem` 实现(`bridge/lkl_fskit.*`、`lkl_blk_ops.c`、`linux_device_fskit.m`):
-  - `probeResource` 从超级块 magic 识别 ext2/3/4(`0xEF53`)、XFS(`XFSB`)、Btrfs(`_BHRfS_M`),
-    并报告卷标 + 原生文件系统 UUID。
-  - `loadResource` 以只读模式加载元数据；激活时再应用显式只读/读写选项，或 App Group 中的
-    按场景设置。只读挂载跳过日志恢复。
-  - `lklfuseVolume` 各操作经 `lkl_sys_*` 由 Linux 驱动处理。
-- **`Info.plist` 的 `FSMediaTypes`** —— Linux 文件系统 GPT GUID `0FC63DAF-…-3D69D8477DE4`、一个
-  `Linux` 内容提示、以及无分区表整盘。**请在真机上确认 ext 卷的确切 DA 内容提示**(MBR 盘可能报
-  `Linux`/`0x83`)。
+- **一个工具覆盖多种 Linux 文件系统** - 在 Mac 上统一使用 ext2/3/4、XFS 和 Btrfs。
+- **使用真实的 Linux 文件系统实现** - 通过 LKL（Linux Kernel Library）使用 Linux 内核驱动，而不是重新实现每一种磁盘格式。
+- **现代 macOS 集成** - 使用 Apple FSKit 模型，通过 macOS 挂载卷，不依赖 macFUSE，也不安装内核扩展。
+- **可选读写或只读模式** - 对支持的设备和磁盘映像选择访问模式；只读介质始终保持只读。
+- **支持物理磁盘和磁盘映像** - 处理 Linux U 盘、外置硬盘、SSD、分区和支持的原始映像。
+- **兼容 Finder 的卷** - 挂载后出现在 `/Volumes`，普通 Mac 应用可以直接使用。
+- **状态和诊断清晰** - 查看文件系统、挂载路径、访问模式、扩展状态和常见配置问题。
+- **支持 Apple Silicon 和 Intel** - 提供 `arm64` 和 `x86_64` 通用构建，最低支持 macOS 15.4。
+- **开源且本地运行** - 源代码、测试、兼容性说明和隐私政策均在仓库中；正常使用不会上传文件。
 
-## 从源项目中排除的内容
+## 适合谁？
 
-所有与 ntfs-3g 相关的部分:`ntfs-3g` 子模块 + `libntfs-3g.a`、C/Obj-C 桥接
-(`bridge/ntfs_fskit.{c,h}`、`ntfs_device_fskit.m`)、Swift↔C 桥接头、`build-libntfs.sh` 脚本和
-`test_bridge.c`。扩展 target 里的相关构建设置(`HAVE_CONFIG_H`、ntfs-3g 头搜索路径、静态库链接、
-Obj-C 桥接头)也已从 Xcode 工程里剔除。
+xlinuxfs 适合需要在 Linux 和 macOS 之间交换 Linux 磁盘的 Mac 用户，
+需要从 Mac 查看服务器、NAS、树莓派或 Steam Deck 上的 ext4/XFS/Btrfs
+磁盘的开发者和系统管理员，需要访问双系统 Linux 分区的用户，以及希望
+不用启动完整 Linux 桌面就打开 Linux 磁盘映像的用户。
 
-## 构建与签名
+如果你正在搜索 **Mac 上的 ext4 驱动**、**在 macOS 挂载 ext4**、**Mac
+读写 Linux 磁盘**、**Mac 上的 XFS**、**Mac 上的 Btrfs**、**macOS Linux
+文件系统驱动**、**开源 Mac 磁盘工具** 或 **macFUSE 替代方案**，xlinuxfs
+就是面向这类场景的工具。
 
-先运行 `git submodule update --init --recursive` 初始化 `vendor/lkl`,并安装 upstream LLVM 19
-(或通过 `CLANG` 指定编译器)。Xcode 预构建阶段会自动生成双架构库及对应头文件。
-依赖归属、fork 发布和更新步骤见 [LKL 依赖说明](docs/lkl-dependency.md)。
+## 常见使用流程
 
-打开 `xlinuxfs.xcodeproj`,构建 `xlinuxfs` scheme。target 使用 Xcode 的**同步文件夹组**,所以放进
-`xlinuxfs/` 和 `lklfuse/` 的文件会被自动纳入。
+1. 安装 xlinuxfs，并在 **系统设置 > 通用 > 登录项与扩展 > 文件系统扩展** 中启用扩展。
+2. 插入 Linux 格式磁盘，或打开应用查看支持的磁盘映像。
+3. 让 macOS 自动挂载支持的设备，或者在 xlinuxfs 中选择可用的挂载操作和访问模式。
+4. 在 Finder 中打开挂载卷，使用普通 Mac 应用操作文件，完成后从应用或 Finder 推出。
 
-扩展声明了受限权限 `com.apple.developer.fskit.fsmodule`(`lklfuse/lklfuse.entitlements`);macOS 只有
-在该权限被描述文件授权后才会加载它(你的团队需为 App ID 开通 **FSKit File System Module**
-能力)。在 **系统设置 → 通用 → 登录项与扩展 → 文件系统扩展** 中启用该模块。
+磁盘映像在 macOS 27 上支持应用内原始映像挂载。在其他受支持的系统上，
+当沙盒不能直接执行附加操作时，应用会显示可以复制到终端执行的命令。
 
-## 注意事项
+## macOS 支持
 
-- 通过 `xcodebuild` 构建(应用 + 内嵌 `lklfuse.appex`);可在 Xcode 里打开 `xlinuxfs.xcodeproj`
-  确认也能加载。macOS 27 之前无法在应用内做系统级挂载(FSKit Mounter 仅 27 提供),期间桥接层
-  由命令行测试程序验证。
-- 应用图标(`assets/xlinuxfs-icon.svg`,已光栅化进 `Assets.xcassets/AppIcon.appiconset`)是与 xntfs 同系列的「企鹅 + 硬盘」设计;若改 SVG,用 `rsvg-convert` 重新导出各尺寸即可。
-- Bundle ID:应用 `com.huanchuan.xlinuxfs`,扩展 `com.huanchuan.xlinuxfs.lklfuse`;`FSShortName` =
-  `xlinuxfs`。按需改成你自己的标识符。
+| macOS | 挂载流程 |
+|---|---|
+| macOS 15.4+ | 启用扩展后，Linux 设备使用 macOS 正常的 Disk Arbitration 自动挂载；磁盘映像使用应用显示的终端命令附加。 |
+| macOS 26 | 支持的设备使用正常自动挂载流程；磁盘映像使用应用显示的终端附加命令。 |
+| macOS 27+ | 增加应用内原始映像挂载，以及可明确选择只读/读写模式的设备挂载。 |
 
-## 许可证与隐私
+具体流程取决于 macOS 版本、扩展状态、设备类型、分区布局以及底层介质
+是否允许写入。
 
-本项目嵌入 Linux 内核，整体采用 **GNU General Public License, version 2**，
-详见 [LICENSE](LICENSE)。数据处理说明见 [隐私政策](PRIVACY_CN.md)。
+## 支持范围与限制
+
+| 文件系统 | 访问方式 |
+|---|---|
+| ext2、ext3、ext4 | 可写挂载时支持读写，也支持只读模式 |
+| XFS | 可写挂载时支持读写，也支持只读模式 |
+| Btrfs | 可写挂载时支持读写，也支持只读模式 |
+
+- FSKit 扩展必须完成签名、安装并启用，macOS 才能使用它。
+- 以只读方式附加的物理介质或磁盘映像仍然是只读；驱动不能把只读介质变成可写。
+- 应用内直接挂载面向支持的原始单卷映像；分区映像或压缩容器使用终端附加流程。
+- xlinuxfs 是文件系统访问工具，不是通用文件管理器、分区工具、格式化工具、文件系统修复套件或数据恢复工具。
+- 检查/修复不会被包装成破坏性或恢复操作；修复前请使用对应的 Linux 工具并准备备份。
+
+## xlinuxfs 与商业替代方案
+
+搜索 Mac 上 Linux 文件系统工具时，也可能看到商业产品，例如专注于
+ext2/3/4 的 [Paragon extFS for Mac](https://www.paragon-software.com/home/extfs-mac/)，
+以及通过 Linux microVM 将支持的 Linux 磁盘提供给 macOS 的
+[vmount](https://vmount.app/)。xlinuxfs 采用不同的路线：它是基于 Apple
+FSKit 和 LKL Linux 内核的 GPLv2 开源项目。xlinuxfs 独立运行，与 Apple、
+Linux、Paragon Software、vmount 或 Linux 内核维护者没有从属或背书关系。
+
+## 关联项目
+
+- [xntfs](https://github.com/HuanchuanTech/xntfs)：在 macOS 上提供基于 FSKit 的开源 NTFS 读写支持。
+- [lkl](https://github.com/HuanchuanTech/lkl)：本项目使用的 Linux Kernel Library 源码和 Darwin 构建集成。
+
+## 文档
+
+- [架构与代码结构](docs/architecture.md)
+- [构建与开发](docs/build.md)
+- [平台支持与验证](docs/platform-support.md)
+- [文件系统能力与边界](docs/filesystem-capabilities.md)
+- [隐私政策](PRIVACY_CN.md)
+
+## 开源
+
+- [源代码与 Issues](https://github.com/HuanchuanTech/xlinuxfs)
+- [GPLv2 许可证](LICENSE)
+
+ext2、ext3、ext4、XFS、Btrfs、Linux、macOS、Apple、FSKit、LKL、macFUSE、
+Paragon 和 vmount 是其各自所有者的名称或商标。
